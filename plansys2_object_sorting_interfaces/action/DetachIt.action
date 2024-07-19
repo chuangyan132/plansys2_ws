@@ -1,0 +1,10 @@
+# Goal
+string object_id
+geometry_msgs/Pose new_pose
+---
+# Result
+bool success
+string error_message
+---
+# Feedback
+float32 progress

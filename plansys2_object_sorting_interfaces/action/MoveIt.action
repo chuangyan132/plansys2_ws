@@ -1,0 +1,9 @@
+# Goal
+geometry_msgs/Pose target_pose
+---
+# Result
+bool success
+int16 error_code
+---
+# Feedback
+float32 progress
