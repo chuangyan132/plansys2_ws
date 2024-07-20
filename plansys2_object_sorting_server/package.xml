@@ -15,6 +15,9 @@
   <depend>rclcpp_components</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>geometry_msgs</depend>
+  <depend>shape_msgs</depend>
+  <depend>gripper_action_interfaces</depend>
+  <depend>visualization_msgs</depend>
   <depend>tf2_ros</depend>
 
   <test_depend>ament_lint_auto</test_depend>

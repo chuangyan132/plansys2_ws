@@ -20,7 +20,11 @@ MultiActionServer::MultiActionServer(
     using namespace std::placeholders;
     this->declare_parameter("planning_group", "panda_arm");
     this->declare_parameter("end_effector_link", "panda_link8");
+    
+    double ground_plane_height = this->declare_parameter("ground_plane_height", 0.0);
+    
 
+    marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("ground_plane_marker", 10);
     move_it_action_server_ = rclcpp_action::create_server<MoveIt>(
         this,
         "move_it",
@@ -45,9 +49,17 @@ MultiActionServer::MultiActionServer(
         std::bind(&MultiActionServer::handle_accepted<DetachIt>, this, _1)
     );
 
+    gripper_client_ =  rclcpp_action::create_client<gripper_action_interfaces::action::GripperControl>
+    (
+        this,
+        "gripper_control"
+    );
+
     RCLCPP_INFO(this->get_logger(), "Multi Action Server has been started");
     initialize_moveit(move_group_node);
     initialize_cubes();
+    add_ground_plane(ground_plane_height);
+    
 }
 
 void MultiActionServer::initialize_moveit(const std::shared_ptr<rclcpp::Node>& move_group_node)
@@ -55,6 +67,7 @@ void MultiActionServer::initialize_moveit(const std::shared_ptr<rclcpp::Node>& m
     planning_group_ = this->get_parameter("planning_group").as_string();
     end_effector_link_ = this->get_parameter("end_effector_link").as_string();
 
+    // no possible to have two move_group_interface in the same node
     move_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(move_group_node, planning_group_);
     planning_scene_interface_ = std::make_shared<moveit::planning_interface::PlanningSceneInterface>();
 
@@ -71,8 +84,37 @@ void MultiActionServer::initialize_moveit(const std::shared_ptr<rclcpp::Node>& m
     RCLCPP_INFO(this->get_logger(), "MoveIt has been initialized");
 
 }
+
+void MultiActionServer::add_ground_plane(double height)
+{
+    moveit_msgs::msg::CollisionObject ground_plane;
+    ground_plane.header.frame_id = move_group_->getPlanningFrame();
+    ground_plane.id = "ground_plane";
+
+    shape_msgs::msg::Plane plane;
+    plane.coef = {0.0, 0.0, 1.0, -height};
+
+    ground_plane.planes.push_back(plane);
+
+    geometry_msgs::msg::Pose pose;
+    pose.orientation.w = 1.0;
+    pose.position.z = height;
+    ground_plane.plane_poses.push_back(pose);
+
+    ground_plane.operation = ground_plane.ADD;
+
+    std::vector<moveit_msgs::msg::CollisionObject> collision_objects;
+    collision_objects.push_back(ground_plane);
+    planning_scene_interface_->applyCollisionObjects(collision_objects);
+
+    publish_ground_plane_marker(height);
+    RCLCPP_INFO(this->get_logger(), "Ground plane added successfully at height %f", height);
+}
+
 void MultiActionServer::initialize_cubes()
 {
+    //TODO: cubes information should come from clients. 
+    //TODO: every new cube be published should trigger add_cube_to_planning_scene
     cubes_ = 
     {
         {"red_cube", 0.05, 0.05, 0.05,  geometry_msgs::msg::Pose()},
@@ -83,11 +125,11 @@ void MultiActionServer::initialize_cubes()
 
     cubes_[0].pose.position.x = 0.5;
     cubes_[0].pose.position.y = 0.0;
-    cubes_[0].pose.position.z = 0.0;
+    cubes_[0].pose.position.z = 0.1;
 
     cubes_[1].pose.position.x = 0.3;
     cubes_[1].pose.position.y = -0.3;
-    cubes_[1].pose.position.z = 0.0;
+    cubes_[1].pose.position.z = 0.1;
 
     for (auto & cube : cubes_)
     {
@@ -97,6 +139,48 @@ void MultiActionServer::initialize_cubes()
         cube.pose.orientation.z = 0.0;
         add_cube_to_planning_scene(cube);
     }
+}
+
+std::future<bool> MultiActionServer::control_gripper(double distance)
+{
+    return std::async(std::launch::async, [this, distance]()
+    {
+        if (!gripper_client_->wait_for_action_server(std::chrono::seconds(5))) {
+            RCLCPP_ERROR(this->get_logger(), "Gripper action server not available");
+            return false;
+        }
+
+        auto goal_msg = gripper_action_interfaces::action::GripperControl::Goal();
+        goal_msg.distance = distance;
+
+        auto send_goal_options = rclcpp_action::Client<gripper_action_interfaces::action::GripperControl>::SendGoalOptions();
+        send_goal_options.goal_response_callback =
+            [this](const auto&) { RCLCPP_INFO(this->get_logger(), "Gripper goal accepted"); };
+
+        auto future = gripper_client_->async_send_goal(goal_msg, send_goal_options);
+
+        if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to send gripper goal");
+            return false;
+        }
+
+        auto goal_handle = future.get();
+        if (!goal_handle) {
+            RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
+            return false;
+        }
+
+        auto result_future = gripper_client_->async_get_result(goal_handle);
+
+        if (result_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to get gripper result");
+            return false;
+        }
+
+        auto wrapped_result = result_future.get();
+        return wrapped_result.result->success;
+    });
+
 }
 
 void MultiActionServer::add_cube_to_planning_scene(const CubeInfo & cube)
@@ -114,6 +198,32 @@ void MultiActionServer::add_cube_to_planning_scene(const CubeInfo & cube)
     collision_object.operation = collision_object.ADD;
 
     planning_scene_interface_->applyCollisionObject(collision_object);
+}
+
+void MultiActionServer::publish_ground_plane_marker(double height)
+{
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = move_group_->getPlanningFrame();
+    marker.header.stamp = this->now();
+    marker.ns = "ground_plane";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::CUBE;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+
+    marker.pose.orientation.w = 1.0;
+    marker.pose.position.z = height - 0.005;
+
+    marker.scale.x = 20.0;
+    marker.scale.y = 20.0;
+    marker.scale.z = 0.01;
+
+    marker.color.a = 0.5;
+    marker.color.r = 0.8;
+    marker.color.g = 0.8;
+    marker.color.b = 0.8;
+
+    marker_pub_->publish(marker);
+    
 }
 
 void MultiActionServer::update_planning_scene()
@@ -150,6 +260,7 @@ void MultiActionServer::handle_accepted(
     std::thread{[this, goal_handle]() { this->execute_goal(goal_handle); }}.detach();
 }
 
+// ============================== MoveIt =========================================
 void MultiActionServer::execute_goal(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveIt>> goal_handle)
 {
@@ -158,9 +269,6 @@ void MultiActionServer::execute_goal(
     auto feedback = std::make_shared<MoveIt::Feedback>();
     auto result = std::make_shared<MoveIt::Result>();
 
-    // Why we do not need to update the planning scene here? 
-    // Its because the planning scene is updated in the constructor
-    // update_planning_scene();
     try
     {
         move_group_->setPoseTarget(goal->target_pose);
@@ -193,7 +301,8 @@ void MultiActionServer::execute_goal(
         RCLCPP_INFO(this->get_logger(), "MoveIt goal succeeded");
     }
 }
-    
+
+// ==============================AttachIt execution================================
 void MultiActionServer::execute_goal(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<AttachIt>> goal_handle)
 {
@@ -218,6 +327,14 @@ void MultiActionServer::execute_goal(
 
         const CubeInfo& cube = *it;
 
+        auto gripper_future = control_gripper(0.027);
+        if (gripper_future.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+            throw std::runtime_error("Gripper control timed out");
+        }
+        if (!gripper_future.get()) {
+            throw std::runtime_error("Failed to control gripper");
+        }
+
         move_group_->attachObject(cube.id, end_effector_link_, touch_links_);
         update_planning_scene();
         result->success = true;
@@ -238,6 +355,7 @@ void MultiActionServer::execute_goal(
     }
 }
 
+// ==============================DetachIt execution================================
 void MultiActionServer::execute_goal(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<DetachIt>> goal_handle)
 {
@@ -247,16 +365,16 @@ void MultiActionServer::execute_goal(
 
     try
     {
-        move_group_->detachObject(goal->object_id);
-        auto it = std::find_if(cubes_.begin(), cubes_.end(), 
-            [&](const CubeInfo & cube) { return cube.id == goal->object_id; });
-
-        if (it != cubes_.end())
-        {
-            it->pose = goal->new_pose;
-            add_cube_to_planning_scene(*it);
+        auto gripper_future = control_gripper(0.04);
+        if (gripper_future.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+            throw std::runtime_error("Gripper control timed out");
+        }
+        if (!gripper_future.get()) {
+            throw std::runtime_error("Failed to control gripper");
         }
 
+        move_group_->detachObject(goal->object_id);
+        // TODO: update the planning scene should be callback function
         update_planning_scene();
         result->success = true;
         RCLCPP_INFO(this->get_logger(), "Object %s detached successfully", goal->object_id.c_str());

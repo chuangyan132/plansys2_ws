@@ -17,6 +17,7 @@
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.h>
 #include <geometry_msgs/msg/pose.hpp>
+#include <shape_msgs/msg/plane.hpp>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -24,12 +25,14 @@
 #include "plansys2_object_sorting_interfaces/action/move_it.hpp"
 #include "plansys2_object_sorting_interfaces/action/attach_it.hpp"
 #include "plansys2_object_sorting_interfaces/action/detach_it.hpp"
+#include "gripper_action_interfaces/action/gripper_control.hpp"
 
 #include <string>
 #include <vector>
 #include <memory>
 #include <functional>
 #include <thread>
+#include <future>
 
 class MultiActionServer : public rclcpp::Node
 {
@@ -44,17 +47,22 @@ public:
         );
 
 private:
-    rclcpp_action::Server<MoveIt>::SharedPtr move_it_action_server_;
-    rclcpp_action::Server<AttachIt>::SharedPtr attach_it_action_server_;
-    rclcpp_action::Server<DetachIt>::SharedPtr detach_it_action_server_;
-
-    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
-    std::shared_ptr<moveit::planning_interface::PlanningSceneInterface> planning_scene_interface_;
-    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
-
     std::string planning_group_;
     std::string end_effector_link_;
     std::vector<std::string> touch_links_;
+
+    rclcpp_action::Server<MoveIt>::SharedPtr move_it_action_server_;
+    rclcpp_action::Server<AttachIt>::SharedPtr attach_it_action_server_;
+    rclcpp_action::Server<DetachIt>::SharedPtr detach_it_action_server_;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+    rclcpp_action::Client<gripper_action_interfaces::action::GripperControl>::SharedPtr gripper_client_;
+
+    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
+
+    std::shared_ptr<moveit::planning_interface::PlanningSceneInterface> planning_scene_interface_;
+    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
+
+
 
     struct CubeInfo
     {
@@ -69,8 +77,11 @@ private:
 
     void initialize_moveit(const std::shared_ptr<rclcpp::Node>& move_group_node);
     void initialize_cubes();
+    void add_ground_plane(double height);
+    void publish_ground_plane_marker(double height);
     void add_cube_to_planning_scene(const CubeInfo & cube);
     void update_planning_scene();
+    std::future<bool> control_gripper(double distance);
 
     template <typename T>
     rclcpp_action::GoalResponse handle_goal(

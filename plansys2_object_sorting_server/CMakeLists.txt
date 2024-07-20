@@ -18,6 +18,9 @@ find_package(moveit_ros_planning REQUIRED)
 find_package(geometric_shapes REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(shape_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(gripper_action_interfaces REQUIRED)
 
 include_directories(
   include
@@ -29,6 +32,9 @@ ament_target_dependencies(plansys2_object_sorting_server
   rclcpp_action
   moveit_ros_planning_interface
   plansys2_object_sorting_interfaces
+  shape_msgs
+  visualization_msgs
+  gripper_action_interfaces
 )
 
 install(TARGETS
