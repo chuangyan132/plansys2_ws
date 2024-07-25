@@ -1,0 +1,6 @@
+# RemoveObject.action
+---
+bool success
+string message
+---
+# No feedback

@@ -25,6 +25,15 @@ MultiActionServer::MultiActionServer(
     
 
     marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("ground_plane_marker", 10);
+    
+    add_object_action_server_ = rclcpp_action::create_server<AddObject>(
+        this,
+        "add_object",
+        std::bind(&MultiActionServer::handle_goal<AddObject>, this, _1, _2),
+        std::bind(&MultiActionServer::handle_cancel<AddObject>, this, _1),
+        std::bind(&MultiActionServer::handle_accepted<AddObject>, this, _1)
+    );
+    
     move_it_action_server_ = rclcpp_action::create_server<MoveIt>(
         this,
         "move_it",
@@ -49,6 +58,14 @@ MultiActionServer::MultiActionServer(
         std::bind(&MultiActionServer::handle_accepted<DetachIt>, this, _1)
     );
 
+    remove_object_action_server_ = rclcpp_action::create_server<RemoveObject>(
+        this,
+        "remove_object",
+        std::bind(&MultiActionServer::handle_goal<RemoveObject>, this, _1, _2),
+        std::bind(&MultiActionServer::handle_cancel<RemoveObject>, this, _1),
+        std::bind(&MultiActionServer::handle_accepted<RemoveObject>, this, _1)
+    );
+
     gripper_client_ =  rclcpp_action::create_client<gripper_action_interfaces::action::GripperControl>
     (
         this,
@@ -57,7 +74,7 @@ MultiActionServer::MultiActionServer(
 
     RCLCPP_INFO(this->get_logger(), "Multi Action Server has been started");
     initialize_moveit(move_group_node);
-    initialize_cubes();
+    // initialize_cubes();
     add_ground_plane(ground_plane_height);
     
 }
@@ -111,6 +128,7 @@ void MultiActionServer::add_ground_plane(double height)
     RCLCPP_INFO(this->get_logger(), "Ground plane added successfully at height %f", height);
 }
 
+/*
 void MultiActionServer::initialize_cubes()
 {
     //TODO: cubes information should come from clients. 
@@ -140,6 +158,7 @@ void MultiActionServer::initialize_cubes()
         add_cube_to_planning_scene(cube);
     }
 }
+*/
 
 std::future<bool> MultiActionServer::control_gripper(double distance)
 {
@@ -260,6 +279,68 @@ void MultiActionServer::handle_accepted(
     std::thread{[this, goal_handle]() { this->execute_goal(goal_handle); }}.detach();
 }
 
+// ============================== AddObject ======================================
+void MultiActionServer::execute_goal(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<AddObject>> goal_handle)
+{
+    RCLCPP_INFO(this->get_logger(), "Executing AddObject goal");
+    const auto goal = goal_handle->get_goal();
+    auto result = std::make_shared<AddObject::Result>();
+
+    try
+    {
+        YAML::Node config = YAML::LoadFile(goal->config_file_path);
+        std::vector<std::string> object_id_to_add;
+        if(goal->object_names.empty())
+        {
+            // For now we only consider cubes as objects
+            for (const auto & object : config["cubes"])
+            {
+                object_id_to_add.push_back(object.first.as<std::string>());
+            }
+        }
+        else
+        {
+            object_id_to_add = goal->object_names; // object_names is a vector of strings
+        }
+
+        for (const auto& object_id : object_id_to_add)
+        {
+            const auto& object_config = config["cubes"][object_id];
+
+            // For now we only consider cubes as objects
+            CubeInfo cube;
+            cube.id = object_id;
+            cube.size_x = object_config["size_x"].as<double>();
+            cube.size_y = object_config["size_y"].as<double>();
+            cube.size_z = object_config["size_z"].as<double>();
+            cube.pose.position.x = object_config["pose"]["position"]["x"].as<double>();
+            cube.pose.position.y = object_config["pose"]["position"]["y"].as<double>();
+            cube.pose.position.z = object_config["pose"]["position"]["z"].as<double>();
+            cube.pose.orientation.x = object_config["pose"]["orientation"]["x"].as<double>();
+            cube.pose.orientation.y = object_config["pose"]["orientation"]["y"].as<double>();
+            cube.pose.orientation.z = object_config["pose"]["orientation"]["z"].as<double>();
+            cube.pose.orientation.w = object_config["pose"]["orientation"]["w"].as<double>();
+
+            add_cube_to_planning_scene(cube);
+            cubes_[cube.id] = cube;
+
+            result->success = true;
+            result->message = "Objects added successfully";
+            
+
+        }
+    }
+    catch(const std::exception& e)
+    {
+        RCLCPP_INFO(this->get_logger(), "Failed to add object: %s", e.what());
+        result->success = false;
+        result->message = e.what();
+    }
+
+    goal_handle->succeed(result);
+}
+
 // ============================== MoveIt =========================================
 void MultiActionServer::execute_goal(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveIt>> goal_handle)
@@ -312,20 +393,13 @@ void MultiActionServer::execute_goal(
 
     try 
     {
-        // we use lambda function to find the cube with the same id as the goal object_id
-        // "It" is the iterator that points to the first element that satisfies the condition
-       auto it = std::find_if(cubes_.begin(), cubes_.end(), 
-            [&](const CubeInfo & cube) { return cube.id == goal->object_id; });
-        
-        /*
-        explanation: cubes_.end() is the end of the vector, "it" is the iterator that points to 
-        the first element that satisfies the condition
-        */
-        if (it == cubes_.end()){
-            throw std::runtime_error("Cube not found" + goal->object_id);        
+        auto it = cubes_.find(goal->object_id);
+        if (it == cubes_.end())
+        {
+            throw std::runtime_error("Object not found" + goal->object_id);
         }
-
-        const CubeInfo& cube = *it;
+        
+        const CubeInfo & cube = it->second;
 
         auto gripper_future = control_gripper(0.027);
         if (gripper_future.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
@@ -396,29 +470,64 @@ void MultiActionServer::execute_goal(
     
 }
 
-// Explicit instantiation handle_goal of MoveIt, AttachIt, and DetachIt
+// ============================== RemoveObject ====================================
+void MultiActionServer::execute_goal(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<RemoveObject>> goal_handle
+)
+{
+    RCLCPP_INFO(this->get_logger(), "Executing RemoveObject goal");
+    auto result = std::make_shared<RemoveObject::Result>();
+
+    //TODO: Optimize this part
+    std::vector<std::string> object_ids;
+
+    for(const auto&[cube_name, _] : cubes_)
+    {
+        object_ids.push_back(cube_name);
+    }
+
+    cubes_.clear();
+    planning_scene_interface_->removeCollisionObjects(object_ids);
+    result->success = true;
+    result->message = "All objects removed successfully";
+    goal_handle->succeed(result);
+}
+
+// Explicit instantiation handle_goal of AddObject, MoveIt, AttachIt, DetachIt, and RemoveObject
+template rclcpp_action::GoalResponse MultiActionServer::handle_goal<MultiActionServer::AddObject>(
+    const rclcpp_action::GoalUUID &, std::shared_ptr<const MultiActionServer::AddObject::Goal>);
 template rclcpp_action::GoalResponse MultiActionServer::handle_goal<MultiActionServer::MoveIt>(
     const rclcpp_action::GoalUUID &, std::shared_ptr<const MultiActionServer::MoveIt::Goal>);
 template rclcpp_action::GoalResponse MultiActionServer::handle_goal<MultiActionServer::AttachIt>(
     const rclcpp_action::GoalUUID &, std::shared_ptr<const MultiActionServer::AttachIt::Goal>);
 template rclcpp_action::GoalResponse MultiActionServer::handle_goal<MultiActionServer::DetachIt>(
     const rclcpp_action::GoalUUID &, std::shared_ptr<const MultiActionServer::DetachIt::Goal>);
+template rclcpp_action::GoalResponse MultiActionServer::handle_goal<MultiActionServer::RemoveObject>(
+    const rclcpp_action::GoalUUID &, std::shared_ptr<const MultiActionServer::RemoveObject::Goal>);
 
-// Explicit instantiation handle_cancel of MoveIt, AttachIt, and DetachIt
+// Explicit instantiation handle_cancel of AddObject, MoveIt, AttachIt, DetachIt, and RemoveObject
+template rclcpp_action::CancelResponse MultiActionServer::handle_cancel<MultiActionServer::AddObject>(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::AddObject>>);
 template rclcpp_action::CancelResponse MultiActionServer::handle_cancel<MultiActionServer::MoveIt>(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::MoveIt>>);
 template rclcpp_action::CancelResponse MultiActionServer::handle_cancel<MultiActionServer::AttachIt>(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::AttachIt>>);
 template rclcpp_action::CancelResponse MultiActionServer::handle_cancel<MultiActionServer::DetachIt>(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::DetachIt>>);
+template rclcpp_action::CancelResponse MultiActionServer::handle_cancel<MultiActionServer::RemoveObject>(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::RemoveObject>>);
 
-// Explicit instantiation handle_accepted of MoveIt, AttachIt, and DetachIt
+// Explicit instantiation handle_accepted of AddObject, MoveIt, AttachIt, DetachIt, and RemoveObject
+template void MultiActionServer::handle_accepted<MultiActionServer::AddObject>(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::AddObject>>);
 template void MultiActionServer::handle_accepted<MultiActionServer::MoveIt>(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::MoveIt>>);
 template void MultiActionServer::handle_accepted<MultiActionServer::AttachIt>(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::AttachIt>>);
 template void MultiActionServer::handle_accepted<MultiActionServer::DetachIt>(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::DetachIt>>);
+template void MultiActionServer::handle_accepted<MultiActionServer::RemoveObject>(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiActionServer::RemoveObject>>);
 
 
 
@@ -438,4 +547,3 @@ int main(int argc, char **argv)
     rclcpp::shutdown();
     return 0;
 }
-

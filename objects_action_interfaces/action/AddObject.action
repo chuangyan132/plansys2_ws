@@ -1,0 +1,8 @@
+# AddObject.action
+string config_file_path
+string[] object_names
+---
+bool success
+string message
+---
+# No feedback

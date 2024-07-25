@@ -1,0 +1,57 @@
+cubes:
+  red_cube:
+    size_x: 0.05
+    size_y: 0.05
+    size_z: 0.05
+    pose:
+      position:
+        x: 0.5
+        y: 0.0
+        z: 0.025
+      orientation:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+        w: 1.0
+  blue_cube:
+    size_x: 0.05
+    size_y: 0.05
+    size_z: 0.05
+    pose:
+      position:
+        x: 0.5
+        y: 0.1
+        z: 0.025
+      orientation:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+        w: 1.0
+  green_cube:
+    size_x: 0.05
+    size_y: 0.05
+    size_z: 0.05
+    pose:
+      position:
+        x: 0.5
+        y: -0.1
+        z: 0.025
+      orientation:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+        w: 1.0
+  yellow_cube:
+    size_x: 0.05
+    size_y: 0.05
+    size_z: 0.05
+    pose:
+      position:
+        x: 0.5
+        y: 0.2
+        z: 0.025
+      orientation:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+        w: 1.0

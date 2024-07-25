@@ -25,6 +25,9 @@
 #include "plansys2_object_sorting_interfaces/action/move_it.hpp"
 #include "plansys2_object_sorting_interfaces/action/attach_it.hpp"
 #include "plansys2_object_sorting_interfaces/action/detach_it.hpp"
+#include "objects_action_interfaces/action/add_object.hpp"
+#include "objects_action_interfaces/action/remove_object.hpp"
+
 #include "gripper_action_interfaces/action/gripper_control.hpp"
 
 #include <string>
@@ -33,14 +36,18 @@
 #include <functional>
 #include <thread>
 #include <future>
+#include <yaml-cpp/yaml.h>
 
 class MultiActionServer : public rclcpp::Node
 {
 public:
+    using AddObject = objects_action_interfaces::action::AddObject;
     using MoveIt = plansys2_object_sorting_interfaces::action::MoveIt;
     using AttachIt = plansys2_object_sorting_interfaces::action::AttachIt;
     using DetachIt = plansys2_object_sorting_interfaces::action::DetachIt;
+    using RemoveObject = objects_action_interfaces::action::RemoveObject;
 
+    // we use explicit here because we want to avoid the constructor to be used for implicit conversions
     explicit MultiActionServer(
         const rclcpp::NodeOptions & options,
         const std::shared_ptr<rclcpp::Node>& move_group_node
@@ -51,9 +58,13 @@ private:
     std::string end_effector_link_;
     std::vector<std::string> touch_links_;
 
+    // ================================== Action Servers ==================================
+    rclcpp_action::Server<AddObject>::SharedPtr add_object_action_server_;
     rclcpp_action::Server<MoveIt>::SharedPtr move_it_action_server_;
     rclcpp_action::Server<AttachIt>::SharedPtr attach_it_action_server_;
     rclcpp_action::Server<DetachIt>::SharedPtr detach_it_action_server_;
+    rclcpp_action::Server<RemoveObject>::SharedPtr remove_object_action_server_;
+
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
     rclcpp_action::Client<gripper_action_interfaces::action::GripperControl>::SharedPtr gripper_client_;
 
@@ -63,26 +74,28 @@ private:
     planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
 
 
-
-    struct CubeInfo
+    // TODO: add more objects struct
+    struct CubeInfo  
     {
         std::string id;
         double size_x, size_y, size_z;
         geometry_msgs::msg::Pose pose;
     };
-
-    std::vector<CubeInfo> cubes_;
+    std::map<std::string, CubeInfo> cubes_;
+    //std::map<std::string, CubeInfo> cube_objects_;
+    //std::vector<CubeInfo> cubes_;
     
     
 
     void initialize_moveit(const std::shared_ptr<rclcpp::Node>& move_group_node);
-    void initialize_cubes();
+    // void initialize_cubes();
     void add_ground_plane(double height);
     void publish_ground_plane_marker(double height);
     void add_cube_to_planning_scene(const CubeInfo & cube);
     void update_planning_scene();
     std::future<bool> control_gripper(double distance);
 
+    // ================================== Template Action Handlers ==========================
     template <typename T>
     rclcpp_action::GoalResponse handle_goal(
         const rclcpp_action::GoalUUID & uuid,
@@ -96,6 +109,10 @@ private:
     void handle_accepted(
         const std::shared_ptr<rclcpp_action::ServerGoalHandle<T>> goal_handle);
 
+    // ================================== Action Callbacks ==================================
+    void execute_goal(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<AddObject>> goal_handle);
+
     void execute_goal(
         const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveIt>> goal_handle);
 
@@ -104,6 +121,9 @@ private:
 
     void execute_goal(
         const std::shared_ptr<rclcpp_action::ServerGoalHandle<DetachIt>> goal_handle);
+
+    void execute_goal(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<RemoveObject>> goal_handle);
 
 
 
