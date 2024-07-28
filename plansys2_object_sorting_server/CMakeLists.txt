@@ -23,6 +23,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(gripper_action_interfaces REQUIRED)
 find_package(objects_action_interfaces REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(isaac_object_interfaces REQUIRED)
 
 include_directories(
   include
@@ -45,6 +46,7 @@ ament_target_dependencies(plansys2_object_sorting_server
   visualization_msgs
   gripper_action_interfaces
   objects_action_interfaces
+  isaac_object_interfaces
 )
 
 install(TARGETS

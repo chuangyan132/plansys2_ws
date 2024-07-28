@@ -72,11 +72,29 @@ MultiActionServer::MultiActionServer(
         "gripper_control"
     );
 
+    isaac_subscriber_ = this->create_subscription<IsaacObjectInfo>(
+        "isaac_object_info", 1,
+        std::bind(&MultiActionServer::isaac_object_info_callback, this, _1)
+    );
+
     RCLCPP_INFO(this->get_logger(), "Multi Action Server has been started");
     initialize_moveit(move_group_node);
     // initialize_cubes();
     add_ground_plane(ground_plane_height);
     
+}
+
+void MultiActionServer::isaac_object_info_callback(const IsaacObjectInfo::SharedPtr msg)
+{
+    CubeInfo cube;
+    cube.id = msg->object_id;
+    cube.size_x = msg->size_x;
+    cube.size_y = msg->size_y;
+    cube.size_z = msg->size_z;
+    cube.pose = msg->pose;
+
+    add_cube_to_planning_scene(cube);
+    cubes_[cube.id] = cube;
 }
 
 void MultiActionServer::initialize_moveit(const std::shared_ptr<rclcpp::Node>& move_group_node)
@@ -182,7 +200,16 @@ void MultiActionServer::add_cube_to_planning_scene(const CubeInfo & cube)
 
     collision_object.primitives.push_back(primitive);
     collision_object.primitive_poses.push_back(cube.pose);
-    collision_object.operation = collision_object.ADD;
+
+    // Check if the object is already in the planning scene
+    if (planning_scene_interface_->getObjects().count(cube.id) > 0)
+    {
+        collision_object.operation = collision_object.MOVE;
+    }
+    else
+    {
+        collision_object.operation = collision_object.ADD;
+    }
 
     planning_scene_interface_->applyCollisionObject(collision_object);
 }

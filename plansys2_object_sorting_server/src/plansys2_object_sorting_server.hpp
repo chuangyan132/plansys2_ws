@@ -29,6 +29,7 @@
 #include "objects_action_interfaces/action/remove_object.hpp"
 
 #include "gripper_action_interfaces/action/gripper_control.hpp"
+#include "isaac_object_interfaces/msg/isaac_object_info.hpp"
 
 #include <string>
 #include <vector>
@@ -46,6 +47,7 @@ public:
     using AttachIt = plansys2_object_sorting_interfaces::action::AttachIt;
     using DetachIt = plansys2_object_sorting_interfaces::action::DetachIt;
     using RemoveObject = objects_action_interfaces::action::RemoveObject;
+    using IsaacObjectInfo = isaac_object_interfaces::msg::IsaacObjectInfo;
 
     // we use explicit here because we want to avoid the constructor to be used for implicit conversions
     explicit MultiActionServer(
@@ -57,6 +59,7 @@ private:
     std::string planning_group_;
     std::string end_effector_link_;
     std::vector<std::string> touch_links_;
+    rclcpp::Subscription<IsaacObjectInfo>::SharedPtr isaac_subscriber_;
 
     // ================================== Action Servers ==================================
     rclcpp_action::Server<AddObject>::SharedPtr add_object_action_server_;
@@ -94,6 +97,7 @@ private:
     void add_cube_to_planning_scene(const CubeInfo & cube);
     void update_planning_scene();
     std::future<bool> control_gripper(double distance);
+    void isaac_object_info_callback(const IsaacObjectInfo::SharedPtr msg);
 
     // ================================== Template Action Handlers ==========================
     template <typename T>
