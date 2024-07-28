@@ -7,6 +7,7 @@ Date:        25.07.2024
 
 
 #include "MoveItClient.hpp"
+#include <thread>
 
 MoveItClient::MoveItClient(
   const std::string& name,
@@ -34,6 +35,7 @@ bool MoveItClient::setGoal(Goal& goal)
         return false;
     }
 
+    std::this_thread::sleep_for(std::chrono::seconds(7));
     goal.target_pose = predefined_poses_[tp_name];
     return true;
 }
@@ -95,6 +97,16 @@ void MoveItClient::initializePredefinedPoses()
     predefined_poses_["pose1_i"] = pose; // initial pose for pose1(first cube)
 
     pose.position.x = 0.3;
+    pose.position.y = 0.3;
+    pose.position.z = 0.18;
+    predefined_poses_["pose1_ia"] = pose; // desired pose for pose1(first cube)
+
+    pose.position.x = 0.3;
+    pose.position.y = -0.3;
+    pose.position.z = 0.18;
+    predefined_poses_["pose1_da"] = pose; // desired pose for pose1(first cube)
+
+    pose.position.x = 0.3;
     pose.position.y = -0.3;
     pose.position.z = 0.14;
     predefined_poses_["pose1_d"] = pose; // desired pose for pose1(first cube)
@@ -103,6 +115,16 @@ void MoveItClient::initializePredefinedPoses()
     pose.position.y = -0.3;
     pose.position.z = 0.14;
     predefined_poses_["pose2_i"] = pose; // initial pose for pose2(second cube) and so on...
+
+    pose.position.x = -0.3;
+    pose.position.y = -0.3;
+    pose.position.z = 0.18;
+    predefined_poses_["pose2_ia"] = pose; // desired pose for pose1(first cube)
+
+    pose.position.x = -0.3;
+    pose.position.y = 0.3;
+    pose.position.z = 0.18;
+    predefined_poses_["pose2_da"] = pose; // desired pose for pose1(first cube)
 
     pose.position.x = -0.3;
     pose.position.y = 0.3;

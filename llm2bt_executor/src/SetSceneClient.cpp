@@ -93,7 +93,7 @@ void SetSceneClient::onHalt()
 
 void SetSceneClient::initializePredefinedCase()
 {
-    std::string package_name = "plansys2_object_sorting_v2";
+    std::string package_name = "llm2bt_executor";
     std::string config_file_name = "case1.yaml";
     std::string config_file_path = ament_index_cpp::get_package_share_directory(package_name) + "/config/" + config_file_name;
     predefined_case_["case1"] = CaseInfo{

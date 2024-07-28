@@ -42,6 +42,10 @@ add_executable(llm2bt_executor
   src/llm2bt_executor.cpp
   src/MoveItClient.cpp
   src/SetSceneClient.cpp
+  src/isGripperOpenClient.cpp
+  src/RemoveSceneClient.cpp
+  src/PickClient.cpp
+  src/PlaceClient.cpp
   )
 ament_target_dependencies(llm2bt_executor ${THIS_PACKAGE_DEPS})
 

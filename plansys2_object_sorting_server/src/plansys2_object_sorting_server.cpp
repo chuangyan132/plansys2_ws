@@ -21,7 +21,7 @@ MultiActionServer::MultiActionServer(
     this->declare_parameter("planning_group", "panda_arm");
     this->declare_parameter("end_effector_link", "panda_link8");
     
-    double ground_plane_height = this->declare_parameter("ground_plane_height", 0.0);
+    double ground_plane_height = -0.01;
     
 
     marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("ground_plane_marker", 10);
@@ -109,7 +109,7 @@ void MultiActionServer::add_ground_plane(double height)
     ground_plane.id = "ground_plane";
 
     shape_msgs::msg::Plane plane;
-    plane.coef = {0.0, 0.0, 1.0, -height};
+    plane.coef = {0.0, 0.0, 1.0, height};
 
     ground_plane.planes.push_back(plane);
 
@@ -127,38 +127,6 @@ void MultiActionServer::add_ground_plane(double height)
     publish_ground_plane_marker(height);
     RCLCPP_INFO(this->get_logger(), "Ground plane added successfully at height %f", height);
 }
-
-/*
-void MultiActionServer::initialize_cubes()
-{
-    //TODO: cubes information should come from clients. 
-    //TODO: every new cube be published should trigger add_cube_to_planning_scene
-    cubes_ = 
-    {
-        {"red_cube", 0.05, 0.05, 0.05,  geometry_msgs::msg::Pose()},
-        {"blue_cube", 0.05, 0.05, 0.05,  geometry_msgs::msg::Pose()}
-        // {"green_cube", 0.05, 0.05, 0.05,  geometry_msgs::msg::Pose()},
-        // {"yellow_cube", 0.05, 0.05, 0.05,  geometry_msgs::msg::Pose()}
-    };
-
-    cubes_[0].pose.position.x = 0.5;
-    cubes_[0].pose.position.y = 0.0;
-    cubes_[0].pose.position.z = 0.1;
-
-    cubes_[1].pose.position.x = 0.3;
-    cubes_[1].pose.position.y = -0.3;
-    cubes_[1].pose.position.z = 0.1;
-
-    for (auto & cube : cubes_)
-    {
-        cube.pose.orientation.w = 1.0;
-        cube.pose.orientation.x = 0.0;
-        cube.pose.orientation.y = 0.0;
-        cube.pose.orientation.z = 0.0;
-        add_cube_to_planning_scene(cube);
-    }
-}
-*/
 
 std::future<bool> MultiActionServer::control_gripper(double distance)
 {
@@ -401,14 +369,7 @@ void MultiActionServer::execute_goal(
         
         const CubeInfo & cube = it->second;
 
-        auto gripper_future = control_gripper(0.027);
-        if (gripper_future.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
-            throw std::runtime_error("Gripper control timed out");
-        }
-        if (!gripper_future.get()) {
-            throw std::runtime_error("Failed to control gripper");
-        }
-
+        
         move_group_->attachObject(cube.id, end_effector_link_, touch_links_);
         update_planning_scene();
         result->success = true;
@@ -439,14 +400,7 @@ void MultiActionServer::execute_goal(
 
     try
     {
-        auto gripper_future = control_gripper(0.04);
-        if (gripper_future.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
-            throw std::runtime_error("Gripper control timed out");
-        }
-        if (!gripper_future.get()) {
-            throw std::runtime_error("Failed to control gripper");
-        }
-
+        
         move_group_->detachObject(goal->object_id);
         // TODO: update the planning scene should be callback function
         update_planning_scene();
